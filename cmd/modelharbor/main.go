@@ -35,12 +35,17 @@ func main() {
 func runServe(addr string) error {
 	openaiKey := os.Getenv("OPENAI_API_KEY")
 	anthropicKey := os.Getenv("ANTHROPIC_API_KEY")
+	harborKey := os.Getenv("MODEL_HARBOR_API_KEY")
 
 	oai := provider.NewOpenAI(openaiKey, "")
 	ant := provider.NewAnthropic(anthropicKey, "")
 
 	rt := router.New(oai, ant)
+	handler := router.BearerAuth(harborKey, rt)
 
+	if harborKey == "" {
+		fmt.Println("warning: MODEL_HARBOR_API_KEY not set — running without authentication")
+	}
 	fmt.Printf("modelharbor listening on %s\n", addr)
-	return http.ListenAndServe(addr, rt)
+	return http.ListenAndServe(addr, handler)
 }

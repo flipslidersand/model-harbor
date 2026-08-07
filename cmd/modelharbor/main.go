@@ -1,12 +1,12 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"net/http"
 	"os"
+	"time"
 
-	"github.com/flipslidersand/model-harbor/internal/provider"
-	"github.com/flipslidersand/model-harbor/internal/router"
+	"github.com/flipslidersand/model-harbor/internal/httpapi"
 	"github.com/spf13/cobra"
 )
 
@@ -16,31 +16,33 @@ func main() {
 		Short: "Multi-model AI routing gateway",
 	}
 
-	var addr string
-	serve := &cobra.Command{
-		Use:   "serve",
-		Short: "Start the model proxy server",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runServe(addr)
-		},
-	}
-	serve.Flags().StringVar(&addr, "addr", ":8080", "listen address")
-	root.AddCommand(serve)
-
+	root.AddCommand(serveCmd())
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
 }
 
-func runServe(addr string) error {
-	openaiKey := os.Getenv("OPENAI_API_KEY")
-	anthropicKey := os.Getenv("ANTHROPIC_API_KEY")
-
-	oai := provider.NewOpenAI(openaiKey, "")
-	ant := provider.NewAnthropic(anthropicKey, "")
-
-	rt := router.New(oai, ant)
-
-	fmt.Printf("modelharbor listening on %s\n", addr)
-	return http.ListenAndServe(addr, rt)
+func serveCmd() *cobra.Command {
+	var addr string
+	cmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Run the OpenAI-compatible HTTP gateway",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			keys := httpapi.LoadKeysFromEnv()
+			if len(keys) == 0 {
+				log.Printf("WARNING: no API keys configured (MODELHARBOR_API_KEYS); "+
+					"/v1/chat/completions will reject all requests. Set %s to enable access.",
+					"MODELHARBOR_API_KEYS")
+			}
+			srv := &http.Server{
+				Addr:              addr,
+				Handler:           httpapi.NewMux(keys),
+				ReadHeaderTimeout: 10 * time.Second,
+			}
+			log.Printf("modelharbor listening on %s", addr)
+			return srv.ListenAndServe()
+		},
+	}
+	cmd.Flags().StringVar(&addr, "addr", ":8080", "listen address")
+	return cmd
 }
